@@ -1,0 +1,20 @@
+# build folder
+build/
+
+# cmake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# Visual Studio
+*.sln
+*.vcxproj
+*.vcxproj.user
+
+# binaries
+*.exe
+*.obj
+*.pdb
+
+# system
+.DS_Store
