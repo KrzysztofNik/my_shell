@@ -79,7 +79,29 @@ void shell_pwd(std::string argument)
 
 void shell_cd(std::string argument)
 {
-
+	if (argument == "~")
+	{
+		const char* home = std::getenv("USERPROFILE");
+		if (home)
+		{
+			std::filesystem::current_path(home);
+		}
+		else
+		{
+			std::cout << "cd: " << argument << ": No such file or directory\n";
+		}
+	}
+	else
+	{
+		if (std::filesystem::exists(argument) && std::filesystem::is_directory(argument))
+		{
+			std::filesystem::current_path(argument);
+		}
+		else
+		{
+			std::cout << "cd: " << argument << ": No such file or directory\n";
+		}
+	}
 }
 
 int main() {
@@ -87,11 +109,12 @@ int main() {
 	builtins.insert({ "exit", shell_exit });
 	builtins.insert({ "type", type });
 	builtins.insert({ "pwd", shell_pwd });
+	builtins.insert({ "cd", shell_cd });
 	std::cout << std::unitbuf;
 	std::cerr << std::unitbuf;
 	while (true)
 	{
-		std::cout << "$ ";
+		std::cout << ":3 ";
 		std::string input;
 		std::getline(std::cin, input);
 		if (!input.empty())
