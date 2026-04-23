@@ -9,7 +9,7 @@
 #include <windows.h>
 #include <filesystem>
 
-std::map<std::string, std::function<void(std::string)>> builtins;
+std::map<std::string, std::function<void(std::vector<std::string>)>> builtins;
 
 std::vector<std::string> split_path(const std::string& path)
 {
@@ -27,28 +27,54 @@ std::vector<std::string> split_path(const std::string& path)
 	return dirs;
 }
 
-void echo(std::string argument)
+std::vector<std::string> parse_arguments(std::string arguments)
 {
-	std::cout << argument << std::endl;
+	std::vector<std::string> parsedArguments;
+	std::string currArgument;
+	for (size_t i = 0; i < arguments.length(); i++)
+	{
+		if (arguments[i] == ' ')
+		{
+			if (currArgument.empty())
+			{
+				continue;
+			}
+			parsedArguments.push_back(currArgument);
+			currArgument = "";
+			continue;
+		}
+		currArgument += arguments[i];
+	}
+	parsedArguments.push_back(currArgument);
+	return parsedArguments;
 }
 
-void shell_exit(std::string argument)
+void echo(std::vector<std::string> arguments)
+{
+	for (auto argument : arguments)
+	{
+		std::cout << argument << " ";
+	}
+	std::cout << std::endl;
+}
+
+void shell_exit(std::vector<std::string> arguments)
 {
 	std::exit(0);
 }
 
-void type(std::string argument)
+void type(std::vector<std::string> arguments)
 {
-	if (builtins.count(argument))
+	if (builtins.count(arguments[0]))
 	{
-		std::cout << argument << " is a shell builtin" << std::endl;
+		std::cout << arguments[0] << " is a shell builtin" << std::endl;
 	}
 	else
 	{
 		const char* path_env = std::getenv("PATH");
 		if (!path_env)
 		{
-			std::cout << argument << ": command not found" << std::endl;
+			std::cout << arguments[0] << ": command not found" << std::endl;
 		}
 		else
 		{
@@ -59,27 +85,27 @@ void type(std::string argument)
 			{
 				for (const auto& ext: extensions)
 				{
-					std::string full_path = dir + "\\" + argument + ext;
+					std::string full_path = dir + "\\" + arguments[0] + ext;
 					if (_access(full_path.c_str(), 0) == 0)
 					{
-						std::cout << argument << " is " << full_path << "\n";
+						std::cout << arguments[0] << " is " << full_path << "\n";
 						return;
 					}
 				}
 			}
-			std::cout << argument << ": command not found" << std::endl;
+			std::cout << arguments[0] << ": command not found" << std::endl;
 		}
 	}
 }
 
-void shell_pwd(std::string argument)
+void shell_pwd(std::vector<std::string> arguments)
 {
 	std::cout << std::filesystem::current_path() << "\n";
 }
 
-void shell_cd(std::string argument)
+void shell_cd(std::vector<std::string> arguments)
 {
-	if (argument == "~")
+	if (arguments[0] == "~")
 	{
 		const char* home = std::getenv("USERPROFILE");
 		if (home)
@@ -88,18 +114,18 @@ void shell_cd(std::string argument)
 		}
 		else
 		{
-			std::cout << "cd: " << argument << ": No such file or directory\n";
+			std::cout << "cd: " << arguments[0] << ": No such file or directory\n";
 		}
 	}
 	else
 	{
-		if (std::filesystem::exists(argument) && std::filesystem::is_directory(argument))
+		if (std::filesystem::exists(arguments[0]) && std::filesystem::is_directory(arguments[0]))
 		{
-			std::filesystem::current_path(argument);
+			std::filesystem::current_path(arguments[0]);
 		}
 		else
 		{
-			std::cout << "cd: " << argument << ": No such file or directory\n";
+			std::cout << "cd: " << arguments[0] << ": No such file or directory\n";
 		}
 	}
 }
@@ -115,18 +141,19 @@ int main() {
 	while (true)
 	{
 		std::cout << ":3 ";
-		std::string input;
+		std::string input; 
 		std::getline(std::cin, input);
 		if (!input.empty())
 		{
 			std::string command;
-			std::string arguments;
+			std::string argumentsString;
+			std::vector<std::string> arguments;
 			for (size_t i = 0; i < input.size(); i++)
 			{
 				if (input[i] == ' ') 
 				{
 					command = input.substr(0, i);
-					arguments = input.substr(i+1);
+					argumentsString = input.substr(i+1);
 					break;
 				}
 			}
@@ -134,7 +161,7 @@ int main() {
 			{
 				command = input;
 			}
-
+			arguments = parse_arguments(argumentsString);
 			if (builtins.count(command))
 			{
 				builtins[command](arguments);
