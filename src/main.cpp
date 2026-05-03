@@ -31,8 +31,36 @@ std::vector<std::string> parse_arguments(std::string arguments)
 {
 	std::vector<std::string> parsedArguments;
 	std::string currArgument;
+	bool singleQuoteFlag = false;
+	bool doubleQuoteFlag = false;
 	for (size_t i = 0; i < arguments.length(); i++)
 	{
+		if (arguments[i] == '\\' && singleQuoteFlag==false)
+		{
+			currArgument += arguments[i+1];
+			++i;
+			continue;
+		}
+		if (arguments[i] == '\"')
+		{
+			doubleQuoteFlag = !doubleQuoteFlag;
+			continue;
+		}
+		if (doubleQuoteFlag)
+		{
+			currArgument += arguments[i];
+			continue;
+		}
+		if (arguments[i] == '\'')
+		{
+			singleQuoteFlag = !singleQuoteFlag;
+			continue;
+		}
+		if (singleQuoteFlag)
+		{
+			currArgument += arguments[i];
+			continue;
+		}
 		if (arguments[i] == ' ')
 		{
 			if (currArgument.empty())
