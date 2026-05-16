@@ -8,8 +8,19 @@
 #include <io.h>
 #include <windows.h>
 #include <filesystem>
+#include <fstream>
 
-std::map<std::string, std::function<void(std::vector<std::string>)>> builtins;
+struct ParsedCommand
+{
+	std::vector<std::string> arguments;
+	bool isOutputRedi = false;
+	bool isErrorRedi = false;
+	std::string outputFile;
+	std::string errorFile;
+};
+
+//std::map<std::string, std::function<void(std::vector<std::string>)>> builtins;
+std::map<std::string, std::function<void(ParsedCommand)>> builtins;
 
 std::vector<std::string> split_path(const std::string& path)
 {
@@ -27,8 +38,26 @@ std::vector<std::string> split_path(const std::string& path)
 	return dirs;
 }
 
-std::vector<std::string> parse_arguments(std::string arguments)
+std::string build_command_line(const std::string& command, const std::vector<std::string>& args)
 {
+	std::string result = command;
+
+	for (const auto& arg : args)
+	{
+		result += " ";
+
+		if (arg.find(' ') != std::string::npos)
+			result += "\"" + arg + "\"";
+		else
+			result += arg;
+	}
+
+	return result;
+}
+
+ParsedCommand parse_arguments(std::string arguments)
+{
+	ParsedCommand structAfterParsing;
 	std::vector<std::string> parsedArguments;
 	std::string currArgument;
 	bool singleQuoteFlag = false;
@@ -67,42 +96,72 @@ std::vector<std::string> parse_arguments(std::string arguments)
 			{
 				continue;
 			}
+			if (currArgument == ">" || currArgument == "1>" || currArgument == "2>")
+			{
+				if (i + 1 >= arguments.length())
+				{
+					currArgument.erase();
+					continue;
+				}
+				if (currArgument == "2>")
+				{
+					structAfterParsing.isErrorRedi = true;
+					structAfterParsing.errorFile = arguments.substr(i + 1);
+				}
+				else
+				{
+					structAfterParsing.isOutputRedi = true;
+					structAfterParsing.outputFile = arguments.substr(i + 1);
+				}
+				structAfterParsing.arguments = parsedArguments;
+				return structAfterParsing;
+			}
 			parsedArguments.push_back(currArgument);
 			currArgument = "";
 			continue;
 		}
 		currArgument += arguments[i];
 	}
-	parsedArguments.push_back(currArgument);
-	return parsedArguments;
+	if (!currArgument.empty())
+	{
+		parsedArguments.push_back(currArgument);
+	}
+	structAfterParsing.arguments = parsedArguments;
+	return structAfterParsing;
 }
 
-void echo(std::vector<std::string> arguments)
+void echo(ParsedCommand arguments)
 {
-	for (auto argument : arguments)
+	for (auto argument : arguments.arguments)
 	{
 		std::cout << argument << " ";
 	}
 	std::cout << std::endl;
 }
 
-void shell_exit(std::vector<std::string> arguments)
+void shell_exit(ParsedCommand arguments)
 {
 	std::exit(0);
 }
 
-void type(std::vector<std::string> arguments)
+void shell_type(ParsedCommand arguments)
 {
-	if (builtins.count(arguments[0]))
+	if (arguments.arguments.empty())
 	{
-		std::cout << arguments[0] << " is a shell builtin" << std::endl;
+		std::cout << "type: missing argument\n";
+		return;
+	}
+
+	if (builtins.count(arguments.arguments[0]))
+	{
+		std::cout << arguments.arguments[0] << " is a shell builtin" << std::endl;
 	}
 	else
 	{
 		const char* path_env = std::getenv("PATH");
 		if (!path_env)
 		{
-			std::cout << arguments[0] << ": command not found" << std::endl;
+			std::cout << arguments.arguments[0] << ": command not found" << std::endl;
 		}
 		else
 		{
@@ -113,27 +172,31 @@ void type(std::vector<std::string> arguments)
 			{
 				for (const auto& ext: extensions)
 				{
-					std::string full_path = dir + "\\" + arguments[0] + ext;
+					std::string full_path = dir + "\\" + arguments.arguments[0] + ext;
 					if (_access(full_path.c_str(), 0) == 0)
 					{
-						std::cout << arguments[0] << " is " << full_path << "\n";
+						std::cout << arguments.arguments[0] << " is " << full_path << "\n";
 						return;
 					}
 				}
 			}
-			std::cout << arguments[0] << ": command not found" << std::endl;
+			std::cout << arguments.arguments[0] << ": command not found" << std::endl;
 		}
 	}
 }
 
-void shell_pwd(std::vector<std::string> arguments)
+void shell_pwd(ParsedCommand arguments)
 {
 	std::cout << std::filesystem::current_path() << "\n";
 }
 
-void shell_cd(std::vector<std::string> arguments)
+void shell_cd(ParsedCommand arguments)
 {
-	if (arguments[0] == "~")
+	if (arguments.arguments.empty())
+	{
+		std::cout << "No arguments passed\n";
+	}
+	if (arguments.arguments[0] == "~")
 	{
 		const char* home = std::getenv("USERPROFILE");
 		if (home)
@@ -142,18 +205,18 @@ void shell_cd(std::vector<std::string> arguments)
 		}
 		else
 		{
-			std::cout << "cd: " << arguments[0] << ": No such file or directory\n";
+			std::cout << "cd: " << arguments.arguments[0] << ": No such file or directory\n";
 		}
 	}
 	else
 	{
-		if (std::filesystem::exists(arguments[0]) && std::filesystem::is_directory(arguments[0]))
+		if (std::filesystem::exists(arguments.arguments[0]) && std::filesystem::is_directory(arguments.arguments[0]))
 		{
-			std::filesystem::current_path(arguments[0]);
+			std::filesystem::current_path(arguments.arguments[0]);
 		}
 		else
 		{
-			std::cout << "cd: " << arguments[0] << ": No such file or directory\n";
+			std::cout << "cd: " << arguments.arguments[0] << ": No such file or directory\n";
 		}
 	}
 }
@@ -161,7 +224,7 @@ void shell_cd(std::vector<std::string> arguments)
 int main() {
 	builtins.insert({ "echo", echo });
 	builtins.insert({ "exit", shell_exit });
-	builtins.insert({ "type", type });
+	builtins.insert({ "type", shell_type });
 	builtins.insert({ "pwd", shell_pwd });
 	builtins.insert({ "cd", shell_cd });
 	std::cout << std::unitbuf;
@@ -175,7 +238,7 @@ int main() {
 		{
 			std::string command;
 			std::string argumentsString;
-			std::vector<std::string> arguments;
+			ParsedCommand arguments;
 			for (size_t i = 0; i < input.size(); i++)
 			{
 				if (input[i] == ' ') 
@@ -192,34 +255,92 @@ int main() {
 			arguments = parse_arguments(argumentsString);
 			if (builtins.count(command))
 			{
-				builtins[command](arguments);
+				if (arguments.isOutputRedi)
+				{
+					std::ofstream file(arguments.outputFile, std::ios::trunc);
+					if (!file)
+					{
+						std::cerr << "Cannot open file: " << arguments.outputFile << "\n";
+						continue;
+					}
+					auto* oldBuffer = std::cout.rdbuf(file.rdbuf());
+					builtins[command](arguments);
+					std::cout.rdbuf(oldBuffer);
+				}
+				else 
+				{
+					builtins[command](arguments);
+				}
 			}
 			else
 			{
-				std::vector<char> buffer(input.begin(), input.end());
+				std::string commandLine = build_command_line(command, arguments.arguments);
+
+				std::vector<char> buffer(commandLine.begin(), commandLine.end());
 				buffer.push_back('\0');
+
+				HANDLE stdoutHandle = NULL;
+
+				if (arguments.isOutputRedi)
+				{
+					SECURITY_ATTRIBUTES sa{};
+					sa.nLength = sizeof(sa);
+					sa.lpSecurityDescriptor = NULL;
+					sa.bInheritHandle = TRUE;
+
+					stdoutHandle = CreateFileA(
+						arguments.outputFile.c_str(),
+						GENERIC_WRITE,
+						FILE_SHARE_READ | FILE_SHARE_WRITE,
+						&sa,
+						CREATE_ALWAYS,
+						FILE_ATTRIBUTE_NORMAL,
+						NULL
+					);
+
+					if (stdoutHandle == INVALID_HANDLE_VALUE)
+					{
+						std::cerr << "Cannot open file: " << arguments.outputFile << "\n";
+						continue;
+					}
+				}
+
 				STARTUPINFOA si{};
 				si.cb = sizeof(si);
+
+				if (arguments.isOutputRedi)
+				{
+					si.dwFlags |= STARTF_USESTDHANDLES;
+					si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+					si.hStdOutput = stdoutHandle;
+					si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+				}
+
 				PROCESS_INFORMATION pi{};
-				if (!CreateProcessA(
+
+				BOOL ok = CreateProcessA(
 					NULL,
 					buffer.data(),
 					NULL,
 					NULL,
-					FALSE,
+					arguments.isOutputRedi ? TRUE : FALSE,
 					0,
 					NULL,
 					NULL,
 					&si,
 					&pi
-				))
+				);
+
+				if (!ok)
 				{
 					DWORD err = GetLastError();
+
 					if (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND)
 					{
 						std::cout << command << ": command not found" << std::endl;
 					}
-					else {
+					else
+					{
 						std::cout << "Error: " << err << "\n";
 					}
 				}
@@ -228,6 +349,11 @@ int main() {
 					WaitForSingleObject(pi.hProcess, INFINITE);
 					CloseHandle(pi.hProcess);
 					CloseHandle(pi.hThread);
+				}
+
+				if (arguments.isOutputRedi)
+				{
+					CloseHandle(stdoutHandle);
 				}
 			}
 		}
